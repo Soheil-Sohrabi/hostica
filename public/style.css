@@ -1,0 +1,400 @@
+html,
+body,
+div,
+span,
+applet,
+object,
+iframe,
+h1,
+h2,
+h3,
+h4,
+h5,
+h6,
+p,
+blockquote,
+pre,
+a,
+abbr,
+acronym,
+address,
+big,
+cite,
+code,
+del,
+dfn,
+em,
+img,
+ins,
+kbd,
+q,
+s,
+samp,
+small,
+strike,
+strong,
+sub,
+sup,
+tt,
+var,
+b,
+u,
+i,
+center,
+dl,
+dt,
+dd,
+ol,
+ul,
+li,
+fieldset,
+form,
+label,
+legend,
+table,
+caption,
+tbody,
+tfoot,
+thead,
+tr,
+th,
+td,
+article,
+aside,
+canvas,
+details,
+embed,
+figure,
+figcaption,
+footer,
+header,
+hgroup,
+menu,
+nav,
+output,
+ruby,
+section,
+summary,
+time,
+mark,
+audio,
+video {
+    margin: 0;
+    padding: 0;
+    border: 0;
+    font-size: 100%;
+    font: inherit;
+    vertical-align: baseline;
+}
+
+/* HTML5 display-role reset for older browsers */
+article,
+aside,
+details,
+figcaption,
+figure,
+footer,
+header,
+hgroup,
+menu,
+nav,
+section {
+    display: block;
+}
+
+body {
+    line-height: 1;
+}
+
+ol,
+ul {
+    list-style: none;
+}
+
+blockquote,
+q {
+    quotes: none;
+}
+
+blockquote:before,
+blockquote:after,
+q:before,
+q:after {
+    content: '';
+    content: none;
+}
+
+table {
+    border-collapse: collapse;
+    border-spacing: 0;
+}
+
+* {
+    transition: all .5s ease-in;
+}
+
+html {
+    background-color: #111;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+}
+
+body {
+    width: 100%;
+    min-height: 100vh;
+    font-family: Arial, sans-serif;
+    background: #111;
+    color: #eee;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+.box {
+    background: #222;
+    padding: 1.5vw 1.5vw 2.5vw;
+    border-radius: .8vw;
+    width: 30vw;
+}
+
+h2 {
+    font-size: 1.2vw;
+    margin-bottom: 1vw !important;
+}
+
+input,
+button {
+    padding: .6vw;
+    margin: .35vw 0;
+    width: 100%;
+    box-sizing: border-box;
+    border-radius: .6vw;
+    border: none;
+    outline: none;
+    font-size: .6vw;
+    color: #ffffff;
+    background-color: #3b3b3b;
+}
+
+button {
+    cursor: pointer;
+    background: #555;
+    color: #eee;
+    transition: background 0.2s ease;
+}
+
+button:hover {
+    background: #666;
+}
+
+.row {
+    display: flex;
+    gap: 10px;
+}
+
+.row>* {
+    flex: 1;
+}
+
+.file,
+.folder {
+    background: #333;
+    margin: 6px 0;
+    padding: 10px;
+    border-radius: 6px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.file .actions,
+.folder .actions {
+    display: flex;
+    gap: 4px;
+}
+
+.file button.small,
+.folder button.small {
+    width: auto;
+    padding: 6px 10px;
+    margin-left: 4px;
+}
+
+.name {
+    flex-grow: 1;
+}
+
+h2,
+h3 {
+    margin: 10px 0;
+}
+
+#list>div {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+input[type="file"] {
+    padding: .2vw;
+    font-size: .55vw;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    margin-top: 0.5vw;
+    background-color: #00000000;
+}
+
+#welcome {
+    font-size: .9vw;
+    margin-bottom: .5vw !important;
+}
+
+.logout {
+    margin-top: 1vw !important;
+    transition: all .5s;
+    background-color: #e74c3c;
+}
+
+.logout:hover {
+    background-color: #e74c3c;
+    transform: scale(1.01);
+}
+
+.login:hover {
+    background-color: #2ecc71;
+}
+
+.signup:hover {
+    background-color: #3498db;
+}
+
+.msgBox {
+    margin-top: 5px;
+    color: #f39c12;
+    opacity: 0;
+    transition: opacity 0.3s;
+}
+
+.delete {
+    background-color: #e74c3c;
+}
+
+.downbt {
+    background-color: #3498db;
+}
+
+.view {
+    background-color: #f39c12;
+}
+
+/* استایل‌های Trash Panel */
+#trashPanel {
+  background: #222;
+  padding: 1rem;
+  border-radius: 8px;
+  margin-top: 1rem;
+}
+
+.trash-item {
+  background: #333;
+  margin: 6px 0;
+  padding: 10px;
+  border-radius: 6px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.trash-item .actions {
+  display: flex;
+  gap: 4px;
+}
+
+.trash-item button.small {
+  width: auto;
+  padding: 6px 10px;
+  margin-left: 4px;
+}
+
+.undo {
+  background-color: #2ecc71;
+  color: #eee;
+}
+
+.undo:hover {
+  background-color: #27ae60;
+}
+
+.delete-permanent {
+  background-color: #e74c3c;
+  color: #eee;
+}
+
+.delete-permanent:hover {
+  background-color: #c0392b;
+}
+
+/* استایل‌های SweetAlert2 */
+.swal-confirm {
+    background-color: #e74c3c !important;
+    color: #eee !important;
+    border-radius: .6vw !important;
+    padding: .6vw !important;
+    font-size: .6vw !important;
+}
+
+.swal-confirm:hover {
+    background-color: #c0392b !important;
+}
+
+.swal-cancel {
+    background-color: #555 !important;
+    color: #eee !important;
+    border-radius: .6vw !important;
+    padding: .6vw !important;
+    font-size: .6vw !important;
+}
+
+.swal-cancel:hover {
+    background-color: #666 !important;
+}
+
+.swal-undo {
+    background-color: #f39c12 !important;
+    color: #eee !important;
+    border-radius: .6vw !important;
+    padding: .6vw !important;
+    font-size: .6vw !important;
+}
+
+.swal-undo:hover {
+    background-color: #e67e22 !important;
+}
+
+.swal2-popup {
+    position: fixed !important;
+    z-index: 10000 !important;
+    border-radius: .8vw !important;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5) !important;
+    top: 50% !important;
+    left: 50% !important;
+    transform: translate(-50%, -50%) !important;
+    transition: opacity 0.5s ease-in, transform 0.5s ease-in !important;
+}
+
+.swal2-container {
+    position: fixed !important;
+    z-index: 10000 !important;
+    background: rgba(0, 0, 0, 0.7) !important;
+    transition: opacity 0.5s ease-in !important;
+}
+
+.swal2-show {
+    animation: swal2-show 0.5s !important;
+}
+
+.swal2-hide {
+    animation: swal2-hide 0.5s !important;
+}
