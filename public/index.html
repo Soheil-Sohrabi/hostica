@@ -75,17 +75,35 @@
     .actions button.move-up:hover {
       background-color: #e67e22;
     }
+    #searchInput {
+      margin: 10px 0;
+      padding: 8px;
+      width: 100%;
+      max-width: 300px;
+      border: 1px solid #555;
+      border-radius: 4px;
+      background-color: #1b1e1f;
+      color: #eee;
+    }
+    #searchInput::placeholder {
+      color: #aaa;
+    }
   </style>
 </head>
 <body>
 
 <div id="auth" class="box">
-  <h2>Login / Signup</h2>
+  <h2>Authentication</h2>
   <input id="u" placeholder="Username">
   <input id="p" placeholder="Password" type="password">
+  <div id="secretWordDiv" style="display:none;">
+    <input id="secretWord" placeholder="Secret Word (for password reset)">
+  </div>
   <div class="row">
-    <button class="login" onclick="doLogin()">Login</button>
-    <button class="signup" onclick="doSignup()">Sign up</button>
+    <button class="continue" onclick="doContinue()">Continue</button>
+  </div>
+  <div>
+    <a href="#" onclick="forgotPassword()">Forgot Password?</a>
   </div>
   <div id="authMsg" class="msgBox"></div>
 </div>
@@ -96,21 +114,24 @@
 
   <!-- User panel for managing folders and files -->
   <div id="userPanel">
-  <div>
-    <input id="newFolder" placeholder="Folder name">
-    <button onclick="createFolder()">Create Folder</button>
-    <button onclick="showTrash()">Trash</button>
-  </div>
-  <div id="dropZone">
-    <p>Drag and drop files here</p>
-    <div class="progress-container">
-      <div class="progress-bar"></div>
+    <div>
+      <input id="newFolder" placeholder="Folder name">
+      <button onclick="createFolder()">Create Folder</button>
+      <button onclick="showTrash()">Trash</button>
     </div>
+    <div id="dropZone">
+      <p>Drag and drop files here</p>
+      <div class="progress-container">
+        <div class="progress-bar"></div>
+      </div>
+    </div>
+    <h3>Files in <span id="currentFolder">/</span></h3>
+    <div>
+      <input id="searchInput" placeholder="Search files and folders..." oninput="searchFiles()">
+    </div>
+    <div id="list"></div>
   </div>
-  <h3>Files in <span id="currentFolder">/</span></h3>
-  <div id="list"></div>
-</div>
-
+  
   <!-- Trash panel -->
   <div id="trashPanel" style="display:none; margin-top:1vw;">
     <h3>Trash</h3>
@@ -133,6 +154,7 @@ const API = "/api";
 let token = null;
 let currentFolder = "/";
 let viewingUser = null;
+let allFiles = [];
 
 function showMsg(id, t) {
   const el = document.getElementById(id);
@@ -159,48 +181,148 @@ function getFileIcon(filename) {
   return icons[ext] || 'fas fa-file';
 }
 
-// Signup
-async function doSignup() {
+// Combined Login/Signup
+async function doContinue() {
   const u = document.getElementById("u").value.trim();
   const p = document.getElementById("p").value;
-  if (!u || !p) return showMsg("authMsg", "Please fill all fields");
-  try {
-    const res = await fetch(API + "/auth/signup", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ username: u, password: p })
-    });
-    const data = await res.json();
-    showMsg("authMsg", data.message || data.error);
-  } catch (err) {
-    showMsg("authMsg", "Signup failed");
-  }
-}
+  const secretWord = document.getElementById("secretWord").value.trim();
+  if (!u || !p) return showMsg("authMsg", "Please fill username and password");
 
-// Login
-async function doLogin() {
-  const u = document.getElementById("u").value.trim();
-  const p = document.getElementById("p").value;
-  if (!u || !p) return showMsg("authMsg", "Please fill all fields");
   try {
-    const res = await fetch(API + "/auth/login", {
+    const body = { username: u, password: p };
+    if (secretWord) body.secretWord = secretWord;
+    const res = await fetch(API + "/auth/continue", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ username: u, password: p })
+      body: JSON.stringify(body)
     });
     const data = await res.json();
-    if (!res.ok) return showMsg("authMsg", data.error || "Invalid username or password");
+    if (!res.ok) {
+      if (data.error === "New user, provide secret word") {
+        document.getElementById("secretWordDiv").style.display = "block";
+        showMsg("authMsg", "New user! Please provide a secret word for password reset.");
+        return;
+      }
+      return showMsg("authMsg", data.error || "Authentication failed");
+    }
     token = data.token;
     document.getElementById("auth").style.display = "none";
     document.getElementById("dash").style.display = "block";
     document.getElementById("welcome").textContent = "Welcome, " + data.username;
+    document.getElementById("secretWordDiv").style.display = "none";
     if (data.isAdmin) {
       loadAdminPanel();
     } else {
       loadFiles();
     }
   } catch (err) {
-    showMsg("authMsg", "Login failed");
+    showMsg("authMsg", "Authentication failed");
+  }
+}
+
+// Forgot Password
+async function forgotPassword() {
+  const { value: username } = await Swal.fire({
+    title: "Forgot Password",
+    input: "text",
+    inputLabel: "Enter your username",
+    showCancelButton: true,
+    background: "#222",
+    color: "#eee",
+    confirmButtonColor: "#2ecc71"
+  });
+  if (!username) return;
+
+  const { value: secretWord } = await Swal.fire({
+    title: "Enter Secret Word",
+    input: "text",
+    inputLabel: "Enter your secret word for password reset",
+    showCancelButton: true,
+    background: "#222",
+    color: "#eee",
+    confirmButtonColor: "#2ecc71"
+  });
+  if (!secretWord) return;
+
+  try {
+    const res = await fetch(API + "/auth/forgot", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username, secretWord })
+    });
+    const data = await res.json();
+    if (res.ok) {
+      resetPassword(data.token);
+    } else {
+      Swal.fire({
+        title: "Error",
+        text: data.error || "Invalid username or secret word",
+        icon: "error",
+        background: "#222",
+        color: "#eee",
+        confirmButtonColor: "#2ecc71"
+      });
+    }
+  } catch (err) {
+    Swal.fire({
+      title: "Error",
+      text: "Failed to process request",
+      icon: "error",
+      background: "#222",
+      color: "#eee",
+      confirmButtonColor: "#2ecc71"
+    });
+  }
+}
+
+// Reset Password
+async function resetPassword(token) {
+  const { value: newPassword } = await Swal.fire({
+    title: "Reset Password",
+    input: "password",
+    inputLabel: "Enter new password",
+    showCancelButton: true,
+    background: "#222",
+    color: "#eee",
+    confirmButtonColor: "#2ecc71"
+  });
+  if (!newPassword) return;
+
+  try {
+    const res = await fetch(API + "/auth/reset", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ token, newPassword })
+    });
+    const data = await res.json();
+    if (res.ok) {
+      Swal.fire({
+        title: "Success",
+        text: "Password reset! Please login.",
+        icon: "success",
+        background: "#222",
+        color: "#eee",
+        confirmButtonColor: "#2ecc71"
+      });
+    } else {
+      Swal.fire({
+        title: "Error",
+        text: data.error || "Failed to reset password",
+        icon: "error",
+        background: "#222",
+        color: "#eee",
+        confirmButtonColor: "#2ecc71"
+      });
+    }
+  } catch (err) {
+    Swal.fire({
+      title: "Error",
+      text: "Failed to reset password",
+      icon: "error",
+      background: "#222",
+      color: "#eee",
+      confirmButtonColor: "#2ecc71"
+    });
   }
 }
 
@@ -386,12 +508,13 @@ async function moveFile(fileId, fileName, targetFolder) {
 }
 
 // Rename file or folder
-async function renameItem(id, isFolder) {
+async function renameItem(id, originalName, isFolder) {
+  event.stopPropagation(); // Prevent folder navigation
   const result = await Swal.fire({
-    title: `Rename "${id}"`,
+    title: `Rename "${originalName}"`,
     input: "text",
     inputLabel: "Enter new name",
-    inputValue: id,
+    inputValue: originalName,
     showCancelButton: true,
     confirmButtonColor: "#2ecc71",
     cancelButtonColor: "#555",
@@ -416,6 +539,7 @@ async function renameItem(id, isFolder) {
       confirmButtonColor: "#2ecc71"
     });
     try {
+      console.log(`Sending rename: id=${id}, newName=${newName}, currentFolder=${currentFolder}, isFolder=${isFolder}, user=${viewingUser}`);
       const res = await fetch(API + "/rename", {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
@@ -455,6 +579,116 @@ async function renameItem(id, isFolder) {
   }
 }
 
+// Search files and folders
+async function searchFiles() {
+  const query = document.getElementById("searchInput").value.trim().toLowerCase();
+  const cont = document.getElementById("list");
+  cont.innerHTML = "";
+
+  // Upload form
+  const upDiv = document.createElement("div");
+  const inputFile = document.createElement("input");
+  inputFile.type = "file";
+  inputFile.id = "fileInput";
+  inputFile.multiple = true;
+  const upBtn = document.createElement("button");
+  upBtn.textContent = "Upload";
+  upBtn.onclick = () => uploadFile();
+  upDiv.appendChild(inputFile);
+  upDiv.appendChild(upBtn);
+  cont.appendChild(upDiv);
+
+  if (currentFolder !== "/") {
+    const b = document.createElement("div");
+    b.className = "folder";
+    b.innerHTML = `<i class="fas fa-arrow-left mr-2"></i> Back`;
+    b.onclick = () => goBack();
+    cont.appendChild(b);
+  }
+
+  if (!query) {
+    loadFiles();
+    return;
+  }
+
+  try {
+    const res = await fetch(API + `/files/search?query=${encodeURIComponent(query)}&folder=${encodeURIComponent(currentFolder)}${viewingUser ? '&user=' + encodeURIComponent(viewingUser) : ''}`, {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+    if (res.status === 401) {
+      logout();
+      return Swal.fire({
+        title: "Error",
+        text: "Session expired, please login again",
+        icon: "error",
+        background: "#222",
+        color: "#eee",
+        confirmButtonColor: "#2ecc71"
+      });
+    }
+    const data = await res.json();
+    (data.files || []).forEach(f => {
+      const div = document.createElement("div");
+      div.className = f.isFolder ? "folder drop-target" : "file";
+      div.draggable = !f.isFolder; // Only files are draggable
+      const icon = f.isFolder ? 'fas fa-folder' : getFileIcon(f.originalName);
+      if (f.isFolder) {
+        div.innerHTML = `<span class="name"><i class="${icon} mr-2"></i>${f.originalName}</span>
+          <span class="actions">
+            <button class="small delete" title="Delete folder" onclick="event.stopPropagation(); deleteFolder(event, '${f.originalName}')"><i class="fas fa-trash"></i></button>
+            <button class="small rename" title="Rename folder" onclick="event.stopPropagation(); renameItem('${f.originalName}', true)"><i class="fas fa-edit"></i></button>
+          </span>`;
+        div.onclick = () => { currentFolder = pathJoin(currentFolder, f.originalName); loadFiles(); };
+        // Add drag-and-drop handlers for folders
+        div.addEventListener("dragover", (e) => {
+          e.preventDefault();
+          div.classList.add("dragover");
+        });
+        div.addEventListener("dragenter", (e) => {
+          e.preventDefault();
+          div.classList.add("dragover");
+        });
+        div.addEventListener("dragleave", () => {
+          div.classList.remove("dragover");
+        });
+        div.addEventListener("drop", (e) => {
+          e.preventDefault();
+          div.classList.remove("dragover");
+          const fileId = e.dataTransfer.getData("text/plain");
+          const fileName = e.dataTransfer.getData("fileName");
+          if (fileId && fileName) {
+            moveFile(fileId, fileName, f.originalName);
+          }
+        });
+      } else {
+        const moveUpButton = currentFolder !== "/" ? `<button class="small move-up" title="Move to parent folder" onclick="event.stopPropagation(); moveFile('${f.id}', '${f.originalName}', null)"><i class="fas fa-arrow-up"></i></button>` : '';
+        div.innerHTML = `<span class="name"><i class="${icon} mr-2"></i>${f.originalName} — ${Math.round(f.size / 1024)} KB</span>
+          <span class="actions">
+            <button class="small downbt" title="Download file" onclick="event.stopPropagation(); download('${f.id}', '${f.originalName}')"><i class="fas fa-download"></i></button>
+            <button class="small delete" title="Delete file" onclick="event.stopPropagation(); del('${f.id}')"><i class="fas fa-trash"></i></button>
+            <button class="small rename" title="Rename file" onclick="event.stopPropagation(); renameItem('${f.id}', false)"><i class="fas fa-edit"></i></button>
+            ${moveUpButton}
+          </span>`;
+        // Add dragstart handler for files
+        div.addEventListener("dragstart", (e) => {
+          e.dataTransfer.setData("text/plain", f.id);
+          e.dataTransfer.setData("fileName", f.originalName);
+        });
+      }
+      cont.appendChild(div);
+    });
+  } catch (err) {
+    Swal.fire({
+      title: "Error",
+      text: "Failed to search files",
+      icon: "error",
+      background: "#222",
+      color: "#eee",
+      confirmButtonColor: "#2ecc71"
+    });
+  }
+}
+
 // List files and folders
 async function loadFiles() {
   try {
@@ -473,6 +707,7 @@ async function loadFiles() {
       });
     }
     const data = await res.json();
+    allFiles = data.files || [];
     const cont = document.getElementById("list");
     cont.innerHTML = "";
     document.getElementById("currentFolder").textContent = currentFolder;
@@ -498,7 +733,7 @@ async function loadFiles() {
       cont.appendChild(b);
     }
 
-    (data.files || []).forEach(f => {
+    allFiles.forEach(f => {
       const div = document.createElement("div");
       div.className = f.isFolder ? "folder drop-target" : "file";
       div.draggable = !f.isFolder; // Only files are draggable
@@ -506,8 +741,8 @@ async function loadFiles() {
       if (f.isFolder) {
         div.innerHTML = `<span class="name"><i class="${icon} mr-2"></i>${f.originalName}</span>
           <span class="actions">
-            <button class="small delete" title="Delete folder" onclick="deleteFolder(event, '${f.originalName}')"><i class="fas fa-trash"></i></button>
-            <button class="small rename" title="Rename folder" onclick="renameItem('${f.originalName}', true)"><i class="fas fa-edit"></i></button>
+            <button class="small delete" title="Delete folder" onclick="event.stopPropagation(); deleteFolder(event, '${f.originalName}')"><i class="fas fa-trash"></i></button>
+            <button class="small rename" title="Rename folder" onclick="event.stopPropagation(); renameItem('${f.originalName}', true)"><i class="fas fa-edit"></i></button>
           </span>`;
         div.onclick = () => { currentFolder = pathJoin(currentFolder, f.originalName); loadFiles(); };
         // Add drag-and-drop handlers for folders
@@ -532,12 +767,12 @@ async function loadFiles() {
           }
         });
       } else {
-        const moveUpButton = currentFolder !== "/" ? `<button class="small move-up" title="Move to parent folder" onclick="moveFile('${f.id}', '${f.originalName}', null)"><i class="fas fa-arrow-up"></i></button>` : '';
+        const moveUpButton = currentFolder !== "/" ? `<button class="small move-up" title="Move to parent folder" onclick="event.stopPropagation(); moveFile('${f.id}', '${f.originalName}', null)"><i class="fas fa-arrow-up"></i></button>` : '';
         div.innerHTML = `<span class="name"><i class="${icon} mr-2"></i>${f.originalName} — ${Math.round(f.size / 1024)} KB</span>
           <span class="actions">
-            <button class="small downbt" title="Download file" onclick="download('${f.id}', '${f.originalName}')"><i class="fas fa-download"></i></button>
-            <button class="small delete" title="Delete file" onclick="del('${f.id}')"><i class="fas fa-trash"></i></button>
-            <button class="small rename" title="Rename file" onclick="renameItem('${f.id}', false)"><i class="fas fa-edit"></i></button>
+            <button class="small downbt" title="Download file" onclick="event.stopPropagation(); download('${f.id}', '${f.originalName}')"><i class="fas fa-download"></i></button>
+            <button class="small delete" title="Delete file" onclick="event.stopPropagation(); del('${f.id}')"><i class="fas fa-trash"></i></button>
+            <button class="small rename" title="Rename file" onclick="event.stopPropagation(); renameItem('${f.id}', '${f.originalName}', false)"><i class="fas fa-edit"></i></button>
             ${moveUpButton}
           </span>`;
         // Add dragstart handler for files
@@ -818,6 +1053,7 @@ async function deleteFolder(event, folderName) {
 
 // Delete file
 async function del(id) {
+  event.stopPropagation();
   const result = await Swal.fire({
     title: "Delete File?",
     text: "The file will be moved to Trash!",
@@ -911,6 +1147,7 @@ function goBack() {
   const parts = currentFolder.split("/").filter(Boolean);
   parts.pop();
   currentFolder = "/" + (parts.length ? parts.join("/") + "/" : "");
+  document.getElementById("searchInput").value = "";
   loadFiles();
 }
 
@@ -921,6 +1158,7 @@ function getParentFolder() {
 }
 
 async function download(id, name) {
+  event.stopPropagation();
   try {
     const res = await fetch(API + `/files/download/${encodeURIComponent(id)}?folder=${encodeURIComponent(currentFolder)}${viewingUser ? '&user=' + encodeURIComponent(viewingUser) : ''}`, {
       headers: { Authorization: `Bearer ${token}` }
@@ -963,8 +1201,10 @@ function logout() {
   token = null;
   document.getElementById("dash").style.display = "none";
   document.getElementById("auth").style.display = "block";
+  document.getElementById("secretWordDiv").style.display = "none";
   viewingUser = null;
   currentFolder = "/";
+  document.getElementById("searchInput").value = "";
 }
 
 // --- Admin panel ---
@@ -1100,6 +1340,7 @@ async function delUser(username) {
 async function viewUserFiles(username) {
   viewingUser = username;
   currentFolder = "/";
+  document.getElementById("searchInput").value = "";
   loadFiles();
 }
 
@@ -1133,4 +1374,3 @@ if (token) {
 
 </body>
 </html>
-
