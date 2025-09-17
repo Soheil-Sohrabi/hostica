@@ -1,6 +1,12 @@
 {
+  "soheil": {
+    "password": "$2b$10$YtJZJk1wC/p2sSf4dzQbUuj/hNBGIfcJBrq/c0kj4wf8qF9NzdsUa",
+    "secretWord": "$2b$10$4Re5aUdvIQ62H8yRRxAOJOpyrK4ZN09BLu9FoHAvHAIDAbvCXOgrS",
+    "isAdmin": false
+  },
   "Admin": {
-    "password": "161387soh",
+    "password": "$2b$10$a40EK3mS5mau8T81dUm2VeumXPmJBhfEWEMEUltNmJLLJmKpONOrW",
+    "secretWord": "$2b$10$la0lkPObo4dw1jtOHIiuWeIg5SoIiNvkITk7aJVTwKv22y3KV4COW",
     "isAdmin": true
   }
 }
