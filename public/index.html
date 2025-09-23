@@ -1,0 +1,1376 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>File Manager</title>
+  <link rel="stylesheet" href="style.css">
+  <!-- Adding SweetAlert2 -->
+  <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+  <!-- Adding Font Awesome for icons -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/7.0.1/css/all.min.css" integrity="sha512-2SwdPD6INVrV/lHTZbO2nodKhrnDdJK9/kg2XD1r9uGqPo1cUbujc+IYdlYdEErWNu69gVcYgdxlmVmzTWnetw==" crossorigin="anonymous" referrerpolicy="no-referrer" />
+  <style>
+    #dropZone {
+      border: 2px dashed #555;
+      padding: 20px;
+      text-align: center;
+      margin: 10px 0;
+      background-color: #1b1e1f;
+      transition: all 0.3s ease;
+    }
+    #dropZone.dragover {
+      background-color: #1b1e1f;
+      border-color: #2ecc71;
+    }
+    .folder.drop-target.dragover {
+      background-color: #1b1e1f;
+      border: 2px solid #2ecc71;
+    }
+    .progress-container {
+      display: none;
+      height: 4px;
+      background-color: #e5e7eb;
+      border-radius: 2px;
+      margin-top: 10px;
+    }
+    .progress-bar {
+      height: 100%;
+      background-color: #2ecc71;
+      width: 0;
+      transition: width 0.3s ease;
+    }
+    .actions button {
+      border: none;
+      padding: 5px 8px;
+      margin-left: 3px;
+      cursor: pointer;
+      border-radius: 3px;
+      transition: background-color 0.3s ease;
+      font-size: 14px;
+    }
+    .actions button.downbt {
+      background-color: #2ecc71;
+      color: white;
+    }
+    .actions button.downbt:hover {
+      background-color: #27ae60;
+    }
+    .actions button.delete {
+      background-color: #e74c3c;
+      color: white;
+    }
+    .actions button.delete:hover {
+      background-color: #c0392b;
+    }
+    .actions button.rename {
+      background-color: #3498db;
+      color: white;
+    }
+    .actions button.rename:hover {
+      background-color: #2980b9;
+    }
+    .actions button.move-up {
+      background-color: #f39c12;
+      color: white;
+    }
+    .actions button.move-up:hover {
+      background-color: #e67e22;
+    }
+    #searchInput {
+      margin: 10px 0;
+      padding: 8px;
+      width: 100%;
+      max-width: 300px;
+      border: 1px solid #555;
+      border-radius: 4px;
+      background-color: #1b1e1f;
+      color: #eee;
+    }
+    #searchInput::placeholder {
+      color: #aaa;
+    }
+  </style>
+</head>
+<body>
+
+<div id="auth" class="box">
+  <h2>Authentication</h2>
+  <input id="u" placeholder="Username">
+  <input id="p" placeholder="Password" type="password">
+  <div id="secretWordDiv" style="display:none;">
+    <input id="secretWord" placeholder="Secret Word (for password reset)">
+  </div>
+  <div class="row">
+    <button class="continue" onclick="doContinue()">Continue</button>
+  </div>
+  <div>
+    <a href="#" onclick="forgotPassword()">Forgot Password?</a>
+  </div>
+  <div id="authMsg" class="msgBox"></div>
+</div>
+
+<div id="dash" class="box" style="display:none">
+  <h2>Dashboard</h2>
+  <div id="welcome"></div>
+
+  <!-- User panel for managing folders and files -->
+  <div id="userPanel">
+    <div>
+      <input id="newFolder" placeholder="Folder name">
+      <button onclick="createFolder()">Create Folder</button>
+      <button onclick="showTrash()">Trash</button>
+    </div>
+    <div id="dropZone">
+      <p>Drag and drop files here</p>
+      <div class="progress-container">
+        <div class="progress-bar"></div>
+      </div>
+    </div>
+    <h3>Files in <span id="currentFolder">/</span></h3>
+    <div>
+      <input id="searchInput" placeholder="Search files and folders..." oninput="searchFiles()">
+    </div>
+    <div id="list"></div>
+  </div>
+  
+  <!-- Trash panel -->
+  <div id="trashPanel" style="display:none; margin-top:1vw;">
+    <h3>Trash</h3>
+    <p class="trash-warning">If your file or folder stays in Trash for 24 hours, it will be permanently deleted.</p>
+    <button onclick="hideTrash()">Back to Dashboard</button>
+    <div id="trashList"></div>
+  </div>
+
+  <!-- Admin panel -->
+  <div id="adminPanel" style="display:none; margin-top:1vw;">
+    <h3>Admin Panel</h3>
+    <div id="userList"></div>
+  </div>
+
+  <button class="logout" onclick="logout()">Logout</button>
+</div>
+
+<script>
+const API = "/api";
+let token = null;
+let currentFolder = "/";
+let viewingUser = null;
+let allFiles = [];
+
+function showMsg(id, t) {
+  const el = document.getElementById(id);
+  el.textContent = t;
+  el.style.opacity = 1;
+  setTimeout(() => el.style.opacity = 0, 5000);
+}
+
+// Function to get appropriate icon for files
+function getFileIcon(filename) {
+  const ext = filename.split('.').pop().toLowerCase();
+  const icons = {
+    'txt': 'fas fa-file-alt',
+    'pdf': 'fas fa-file-pdf',
+    'doc': 'fas fa-file-word',
+    'docx': 'fas fa-file-word',
+    'jpg': 'fas fa-file-image',
+    'png': 'fas fa-file-image',
+    'zip': 'fas fa-file-archive',
+    'rar': 'fas fa-file-archive',
+    'trec': 'fas fa-file-video',
+    'mp3': 'fas fa-file-audio'
+  };
+  return icons[ext] || 'fas fa-file';
+}
+
+// Combined Login/Signup
+async function doContinue() {
+  const u = document.getElementById("u").value.trim();
+  const p = document.getElementById("p").value;
+  const secretWord = document.getElementById("secretWord").value.trim();
+  if (!u || !p) return showMsg("authMsg", "Please fill username and password");
+
+  try {
+    const body = { username: u, password: p };
+    if (secretWord) body.secretWord = secretWord;
+    const res = await fetch(API + "/auth/continue", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body)
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      if (data.error === "New user, provide secret word") {
+        document.getElementById("secretWordDiv").style.display = "block";
+        showMsg("authMsg", "New user! Please provide a secret word for password reset.");
+        return;
+      }
+      return showMsg("authMsg", data.error || "Authentication failed");
+    }
+    token = data.token;
+    document.getElementById("auth").style.display = "none";
+    document.getElementById("dash").style.display = "block";
+    document.getElementById("welcome").textContent = "Welcome, " + data.username;
+    document.getElementById("secretWordDiv").style.display = "none";
+    if (data.isAdmin) {
+      loadAdminPanel();
+    } else {
+      loadFiles();
+    }
+  } catch (err) {
+    showMsg("authMsg", "Authentication failed");
+  }
+}
+
+// Forgot Password
+async function forgotPassword() {
+  const { value: username } = await Swal.fire({
+    title: "Forgot Password",
+    input: "text",
+    inputLabel: "Enter your username",
+    showCancelButton: true,
+    background: "#222",
+    color: "#eee",
+    confirmButtonColor: "#2ecc71"
+  });
+  if (!username) return;
+
+  const { value: secretWord } = await Swal.fire({
+    title: "Enter Secret Word",
+    input: "text",
+    inputLabel: "Enter your secret word for password reset",
+    showCancelButton: true,
+    background: "#222",
+    color: "#eee",
+    confirmButtonColor: "#2ecc71"
+  });
+  if (!secretWord) return;
+
+  try {
+    const res = await fetch(API + "/auth/forgot", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username, secretWord })
+    });
+    const data = await res.json();
+    if (res.ok) {
+      resetPassword(data.token);
+    } else {
+      Swal.fire({
+        title: "Error",
+        text: data.error || "Invalid username or secret word",
+        icon: "error",
+        background: "#222",
+        color: "#eee",
+        confirmButtonColor: "#2ecc71"
+      });
+    }
+  } catch (err) {
+    Swal.fire({
+      title: "Error",
+      text: "Failed to process request",
+      icon: "error",
+      background: "#222",
+      color: "#eee",
+      confirmButtonColor: "#2ecc71"
+    });
+  }
+}
+
+// Reset Password
+async function resetPassword(token) {
+  const { value: newPassword } = await Swal.fire({
+    title: "Reset Password",
+    input: "password",
+    inputLabel: "Enter new password",
+    showCancelButton: true,
+    background: "#222",
+    color: "#eee",
+    confirmButtonColor: "#2ecc71"
+  });
+  if (!newPassword) return;
+
+  try {
+    const res = await fetch(API + "/auth/reset", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ token, newPassword })
+    });
+    const data = await res.json();
+    if (res.ok) {
+      Swal.fire({
+        title: "Success",
+        text: "Password reset! Please login.",
+        icon: "success",
+        background: "#222",
+        color: "#eee",
+        confirmButtonColor: "#2ecc71"
+      });
+    } else {
+      Swal.fire({
+        title: "Error",
+        text: data.error || "Failed to reset password",
+        icon: "error",
+        background: "#222",
+        color: "#eee",
+        confirmButtonColor: "#2ecc71"
+      });
+    }
+  } catch (err) {
+    Swal.fire({
+      title: "Error",
+      text: "Failed to reset password",
+      icon: "error",
+      background: "#222",
+      color: "#eee",
+      confirmButtonColor: "#2ecc71"
+    });
+  }
+}
+
+// Create folder
+async function createFolder() {
+  const name = document.getElementById("newFolder").value.trim();
+  if (!name) return Swal.fire({
+    title: "Error",
+    text: "Please enter a folder name",
+    icon: "error",
+    background: "#222",
+    color: "#eee",
+    confirmButtonColor: "#2ecc71"
+  });
+  try {
+    const res = await fetch(API + "/folder/create", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ folderName: name, currentFolder })
+    });
+    const data = await res.json();
+    if (res.ok) {
+      loadFiles();
+      document.getElementById("newFolder").value = "";
+      Swal.fire({
+        title: "Success",
+        text: "Folder created successfully",
+        icon: "success",
+        background: "#222",
+        color: "#eee",
+        confirmButtonColor: "#2ecc71"
+      });
+    } else {
+      Swal.fire({
+        title: "Error",
+        text: data.error || "Failed to create folder",
+        icon: "error",
+        background: "#222",
+        color: "#eee",
+        confirmButtonColor: "#2ecc71"
+      });
+    }
+  } catch (err) {
+    Swal.fire({
+      title: "Error",
+      text: "Failed to create folder",
+      icon: "error",
+      background: "#222",
+      color: "#eee",
+      confirmButtonColor: "#2ecc71"
+    });
+  }
+}
+
+// Upload file
+async function uploadFile(file) {
+  if (!file) {
+    const input = document.getElementById("fileInput");
+    if (!input.files.length) return Swal.fire({
+      title: "Error",
+      text: "Please select at least one file",
+      icon: "error",
+      background: "#222",
+      color: "#eee",
+      confirmButtonColor: "#2ecc71"
+    });
+    Array.from(input.files).forEach(uploadFile);
+    input.value = "";
+    return;
+  }
+  console.log(`Client: Sending upload request with folder=${currentFolder}`);
+  const fd = new FormData();
+  fd.append("file", file);
+  fd.append("folder", currentFolder);
+  const progressContainer = document.querySelector(".progress-container");
+  const progressBar = document.querySelector(".progress-bar");
+  progressContainer.style.display = "block";
+  try {
+    const xhr = new XMLHttpRequest();
+    xhr.open("POST", API + `/files/upload${viewingUser ? '?user=' + encodeURIComponent(viewingUser) : ''}`);
+    xhr.setRequestHeader("Authorization", `Bearer ${token}`);
+    xhr.upload.onprogress = (e) => {
+      if (e.lengthComputable) {
+        const percent = (e.loaded / e.total) * 100;
+        progressBar.style.width = `${percent}%`;
+      }
+    };
+    xhr.onload = async () => {
+      progressBar.style.width = "0%";
+      progressContainer.style.display = "none";
+      const data = JSON.parse(xhr.responseText);
+      if (xhr.status === 200) {
+        loadFiles();
+        Swal.fire({
+          title: "Success",
+          text: "File uploaded successfully",
+          icon: "success",
+          background: "#222",
+          color: "#eee",
+          confirmButtonColor: "#2ecc71"
+        });
+      } else {
+        Swal.fire({
+          title: "Error",
+          text: data.error || "Failed to upload file",
+          icon: "error",
+          background: "#222",
+          color: "#eee",
+          confirmButtonColor: "#2ecc71"
+        });
+      }
+    };
+    xhr.onerror = () => {
+      progressBar.style.width = "0%";
+      progressContainer.style.display = "none";
+      Swal.fire({
+        title: "Error",
+        text: "Failed to upload file",
+        icon: "error",
+        background: "#222",
+        color: "#eee",
+        confirmButtonColor: "#2ecc71"
+      });
+    };
+    xhr.send(fd);
+  } catch (err) {
+    progressBar.style.width = "0%";
+    progressContainer.style.display = "none";
+    console.error(`Client: Upload error: ${err.message}`);
+    Swal.fire({
+      title: "Error",
+      text: "Failed to upload file",
+      icon: "error",
+      background: "#222",
+      color: "#eee",
+      confirmButtonColor: "#2ecc71"
+    });
+  }
+}
+
+// Move file to folder or parent
+async function moveFile(fileId, fileName, targetFolder) {
+  try {
+    const targetPath = targetFolder ? pathJoin(currentFolder, targetFolder) : getParentFolder();
+    const res = await fetch(API + "/files/move", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ fileId, fileName, currentFolder, targetFolder: targetPath, user: viewingUser })
+    });
+    const data = await res.json();
+    if (res.ok) {
+      loadFiles();
+      Swal.fire({
+        title: "Success",
+        text: `File "${fileName}" moved to parent folder`,
+        icon: "success",
+        background: "#222",
+        color: "#eee",
+        confirmButtonColor: "#2ecc71",
+        timer: 3000,
+        timerProgressBar: true
+      });
+    } else {
+      Swal.fire({
+        title: "Error",
+        text: data.error || "Failed to move file",
+        icon: "error",
+        background: "#222",
+        color: "#eee",
+        confirmButtonColor: "#2ecc71"
+      });
+    }
+  } catch (err) {
+    Swal.fire({
+      title: "Error",
+      text: "Failed to move file",
+      icon: "error",
+      background: "#222",
+      color: "#eee",
+      confirmButtonColor: "#2ecc71"
+    });
+  }
+}
+
+// Rename file or folder
+async function renameItem(id, originalName, isFolder) {
+  event.stopPropagation(); // Prevent folder navigation
+  const result = await Swal.fire({
+    title: `Rename "${originalName}"`,
+    input: "text",
+    inputLabel: "Enter new name",
+    inputValue: originalName,
+    showCancelButton: true,
+    confirmButtonColor: "#2ecc71",
+    cancelButtonColor: "#555",
+    confirmButtonText: "Rename",
+    cancelButtonText: "Cancel",
+    background: "#222",
+    color: "#eee",
+    inputAttributes: {
+      autocapitalize: "off"
+    },
+    showClass: { popup: 'swal2-show 0.5s' },
+    hideClass: { popup: 'swal2-hide 0.5s' }
+  });
+  if (result.isConfirmed && result.value) {
+    const newName = result.value.trim();
+    if (!newName) return Swal.fire({
+      title: "Error",
+      text: "Please enter a valid name",
+      icon: "error",
+      background: "#222",
+      color: "#eee",
+      confirmButtonColor: "#2ecc71"
+    });
+    try {
+      console.log(`Sending rename: id=${id}, newName=${newName}, currentFolder=${currentFolder}, isFolder=${isFolder}, user=${viewingUser}`);
+      const res = await fetch(API + "/rename", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ oldName: id, newName, currentFolder, isFolder, user: viewingUser })
+      });
+      const data = await res.json();
+      if (res.ok) {
+        loadFiles();
+        Swal.fire({
+          title: "Success",
+          text: `${isFolder ? 'Folder' : 'File'} renamed successfully`,
+          icon: "success",
+          background: "#222",
+          color: "#eee",
+          confirmButtonColor: "#2ecc71"
+        });
+      } else {
+        Swal.fire({
+          title: "Error",
+          text: data.error || `Failed to rename ${isFolder ? 'folder' : 'file'}`,
+          icon: "error",
+          background: "#222",
+          color: "#eee",
+          confirmButtonColor: "#2ecc71"
+        });
+      }
+    } catch (err) {
+      Swal.fire({
+        title: "Error",
+        text: `Failed to rename ${isFolder ? 'folder' : 'file'}`,
+        icon: "error",
+        background: "#222",
+        color: "#eee",
+        confirmButtonColor: "#2ecc71"
+      });
+    }
+  }
+}
+
+// Search files and folders
+async function searchFiles() {
+  const query = document.getElementById("searchInput").value.trim().toLowerCase();
+  const cont = document.getElementById("list");
+  cont.innerHTML = "";
+
+  // Upload form
+  const upDiv = document.createElement("div");
+  const inputFile = document.createElement("input");
+  inputFile.type = "file";
+  inputFile.id = "fileInput";
+  inputFile.multiple = true;
+  const upBtn = document.createElement("button");
+  upBtn.textContent = "Upload";
+  upBtn.onclick = () => uploadFile();
+  upDiv.appendChild(inputFile);
+  upDiv.appendChild(upBtn);
+  cont.appendChild(upDiv);
+
+  if (currentFolder !== "/") {
+    const b = document.createElement("div");
+    b.className = "folder";
+    b.innerHTML = `<i class="fas fa-arrow-left mr-2"></i> Back`;
+    b.onclick = () => goBack();
+    cont.appendChild(b);
+  }
+
+  if (!query) {
+    loadFiles();
+    return;
+  }
+
+  try {
+    const res = await fetch(API + `/files/search?query=${encodeURIComponent(query)}&folder=${encodeURIComponent(currentFolder)}${viewingUser ? '&user=' + encodeURIComponent(viewingUser) : ''}`, {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+    if (res.status === 401) {
+      logout();
+      return Swal.fire({
+        title: "Error",
+        text: "Session expired, please login again",
+        icon: "error",
+        background: "#222",
+        color: "#eee",
+        confirmButtonColor: "#2ecc71"
+      });
+    }
+    const data = await res.json();
+    (data.files || []).forEach(f => {
+      const div = document.createElement("div");
+      div.className = f.isFolder ? "folder drop-target" : "file";
+      div.draggable = !f.isFolder; // Only files are draggable
+      const icon = f.isFolder ? 'fas fa-folder' : getFileIcon(f.originalName);
+      if (f.isFolder) {
+        div.innerHTML = `<span class="name"><i class="${icon} mr-2"></i>${f.originalName}</span>
+          <span class="actions">
+            <button class="small delete" title="Delete folder" onclick="event.stopPropagation(); deleteFolder(event, '${f.originalName}')"><i class="fas fa-trash"></i></button>
+            <button class="small rename" title="Rename folder" onclick="event.stopPropagation(); renameItem('${f.originalName}', true)"><i class="fas fa-edit"></i></button>
+          </span>`;
+        div.onclick = () => { currentFolder = pathJoin(currentFolder, f.originalName); loadFiles(); };
+        // Add drag-and-drop handlers for folders
+        div.addEventListener("dragover", (e) => {
+          e.preventDefault();
+          div.classList.add("dragover");
+        });
+        div.addEventListener("dragenter", (e) => {
+          e.preventDefault();
+          div.classList.add("dragover");
+        });
+        div.addEventListener("dragleave", () => {
+          div.classList.remove("dragover");
+        });
+        div.addEventListener("drop", (e) => {
+          e.preventDefault();
+          div.classList.remove("dragover");
+          const fileId = e.dataTransfer.getData("text/plain");
+          const fileName = e.dataTransfer.getData("fileName");
+          if (fileId && fileName) {
+            moveFile(fileId, fileName, f.originalName);
+          }
+        });
+      } else {
+        const moveUpButton = currentFolder !== "/" ? `<button class="small move-up" title="Move to parent folder" onclick="event.stopPropagation(); moveFile('${f.id}', '${f.originalName}', null)"><i class="fas fa-arrow-up"></i></button>` : '';
+        div.innerHTML = `<span class="name"><i class="${icon} mr-2"></i>${f.originalName} — ${Math.round(f.size / 1024)} KB</span>
+          <span class="actions">
+            <button class="small downbt" title="Download file" onclick="event.stopPropagation(); download('${f.id}', '${f.originalName}')"><i class="fas fa-download"></i></button>
+            <button class="small delete" title="Delete file" onclick="event.stopPropagation(); del('${f.id}')"><i class="fas fa-trash"></i></button>
+            <button class="small rename" title="Rename file" onclick="event.stopPropagation(); renameItem('${f.id}', false)"><i class="fas fa-edit"></i></button>
+            ${moveUpButton}
+          </span>`;
+        // Add dragstart handler for files
+        div.addEventListener("dragstart", (e) => {
+          e.dataTransfer.setData("text/plain", f.id);
+          e.dataTransfer.setData("fileName", f.originalName);
+        });
+      }
+      cont.appendChild(div);
+    });
+  } catch (err) {
+    Swal.fire({
+      title: "Error",
+      text: "Failed to search files",
+      icon: "error",
+      background: "#222",
+      color: "#eee",
+      confirmButtonColor: "#2ecc71"
+    });
+  }
+}
+
+// List files and folders
+async function loadFiles() {
+  try {
+    const res = await fetch(API + `/files/list?folder=${encodeURIComponent(currentFolder)}${viewingUser ? '&user=' + encodeURIComponent(viewingUser) : ''}`, {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+    if (res.status === 401) {
+      logout();
+      return Swal.fire({
+        title: "Error",
+        text: "Session expired, please login again",
+        icon: "error",
+        background: "#222",
+        color: "#eee",
+        confirmButtonColor: "#2ecc71"
+      });
+    }
+    const data = await res.json();
+    allFiles = data.files || [];
+    const cont = document.getElementById("list");
+    cont.innerHTML = "";
+    document.getElementById("currentFolder").textContent = currentFolder;
+
+    // Upload form
+    const upDiv = document.createElement("div");
+    const inputFile = document.createElement("input");
+    inputFile.type = "file";
+    inputFile.id = "fileInput";
+    inputFile.multiple = true;
+    const upBtn = document.createElement("button");
+    upBtn.textContent = "Upload";
+    upBtn.onclick = () => uploadFile();
+    upDiv.appendChild(inputFile);
+    upDiv.appendChild(upBtn);
+    cont.appendChild(upDiv);
+
+    if (currentFolder !== "/") {
+      const b = document.createElement("div");
+      b.className = "folder";
+      b.innerHTML = `<i class="fas fa-arrow-left mr-2"></i> Back`;
+      b.onclick = () => goBack();
+      cont.appendChild(b);
+    }
+
+    allFiles.forEach(f => {
+      const div = document.createElement("div");
+      div.className = f.isFolder ? "folder drop-target" : "file";
+      div.draggable = !f.isFolder; // Only files are draggable
+      const icon = f.isFolder ? 'fas fa-folder' : getFileIcon(f.originalName);
+      if (f.isFolder) {
+        div.innerHTML = `<span class="name"><i class="${icon} mr-2"></i>${f.originalName}</span>
+          <span class="actions">
+            <button class="small delete" title="Delete folder" onclick="event.stopPropagation(); deleteFolder(event, '${f.originalName}')"><i class="fas fa-trash"></i></button>
+            <button class="small rename" title="Rename folder" onclick="event.stopPropagation(); renameItem('${f.originalName}', true)"><i class="fas fa-edit"></i></button>
+          </span>`;
+        div.onclick = () => { currentFolder = pathJoin(currentFolder, f.originalName); loadFiles(); };
+        // Add drag-and-drop handlers for folders
+        div.addEventListener("dragover", (e) => {
+          e.preventDefault();
+          div.classList.add("dragover");
+        });
+        div.addEventListener("dragenter", (e) => {
+          e.preventDefault();
+          div.classList.add("dragover");
+        });
+        div.addEventListener("dragleave", () => {
+          div.classList.remove("dragover");
+        });
+        div.addEventListener("drop", (e) => {
+          e.preventDefault();
+          div.classList.remove("dragover");
+          const fileId = e.dataTransfer.getData("text/plain");
+          const fileName = e.dataTransfer.getData("fileName");
+          if (fileId && fileName) {
+            moveFile(fileId, fileName, f.originalName);
+          }
+        });
+      } else {
+        const moveUpButton = currentFolder !== "/" ? `<button class="small move-up" title="Move to parent folder" onclick="event.stopPropagation(); moveFile('${f.id}', '${f.originalName}', null)"><i class="fas fa-arrow-up"></i></button>` : '';
+        div.innerHTML = `<span class="name"><i class="${icon} mr-2"></i>${f.originalName} — ${Math.round(f.size / 1024)} KB</span>
+          <span class="actions">
+            <button class="small downbt" title="Download file" onclick="event.stopPropagation(); download('${f.id}', '${f.originalName}')"><i class="fas fa-download"></i></button>
+            <button class="small delete" title="Delete file" onclick="event.stopPropagation(); del('${f.id}')"><i class="fas fa-trash"></i></button>
+            <button class="small rename" title="Rename file" onclick="event.stopPropagation(); renameItem('${f.id}', '${f.originalName}', false)"><i class="fas fa-edit"></i></button>
+            ${moveUpButton}
+          </span>`;
+        // Add dragstart handler for files
+        div.addEventListener("dragstart", (e) => {
+          e.dataTransfer.setData("text/plain", f.id);
+          e.dataTransfer.setData("fileName", f.originalName);
+        });
+      }
+      cont.appendChild(div);
+    });
+  } catch (err) {
+    Swal.fire({
+      title: "Error",
+      text: "Failed to load files",
+      icon: "error",
+      background: "#222",
+      color: "#eee",
+      confirmButtonColor: "#2ecc71"
+    });
+  }
+}
+
+// Show Trash panel
+async function showTrash() {
+  document.getElementById("userPanel").style.display = "none";
+  document.getElementById("adminPanel").style.display = "none";
+  document.getElementById("trashPanel").style.display = "block";
+  loadTrash();
+}
+
+// Hide Trash panel
+function hideTrash() {
+  document.getElementById("trashPanel").style.display = "none";
+  document.getElementById("userPanel").style.display = "block";
+  if (viewingUser || document.getElementById("adminPanel").style.display === "block") {
+    document.getElementById("adminPanel").style.display = "block";
+  }
+  loadFiles();
+}
+
+// Load Trash list
+async function loadTrash() {
+  try {
+    const res = await fetch(API + `/trash/list${viewingUser ? '?user=' + encodeURIComponent(viewingUser) : ''}`, {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+    const data = await res.json();
+    const cont = document.getElementById("trashList");
+    cont.innerHTML = "";
+    (data.trashItems || []).forEach(item => {
+      const div = document.createElement("div");
+      div.className = "trash-item";
+      const icon = item.isFolder ? 'fas fa-folder' : getFileIcon(item.originalName);
+      div.innerHTML = `
+        <span class="name"><i class="${icon} mr-2"></i>${item.originalName} — ${Math.round(item.size / 1024)} KB — Deleted: ${new Date(item.deletionTime).toLocaleString()}</span>
+        <span class="actions">
+          <button class="small undo" title="Restore item" onclick="restoreFromTrash('${item.id}', '${item.originalName}', '${item.isFolder ? 'folder' : 'file'}', '${item.trashId}')"><i class="fas fa-undo"></i></button>
+          <button class="small delete-permanent" title="Delete permanently" onclick="deleteFromTrash('${item.trashId}')"><i class="fas fa-trash-alt"></i></button>
+        </span>`;
+      cont.appendChild(div);
+    });
+  } catch (err) {
+    Swal.fire({
+      title: "Error",
+      text: "Failed to load Trash",
+      icon: "error",
+      background: "#222",
+      color: "#eee",
+      confirmButtonColor: "#2ecc71"
+    });
+  }
+}
+
+// Restore from Trash
+async function restoreFromTrash(itemId, originalName, type, trashId) {
+  const result = await Swal.fire({
+    title: "Restore from Trash?",
+    text: `Do you want to restore "${originalName}"?`,
+    icon: "question",
+    showCancelButton: true,
+    confirmButtonColor: "#2ecc71",
+    cancelButtonColor: "#555",
+    confirmButtonText: "Restore",
+    cancelButtonText: "Cancel",
+    background: "#222",
+    color: "#eee",
+    showClass: { popup: 'swal2-show 0.5s' },
+    hideClass: { popup: 'swal2-hide 0.5s' }
+  });
+  if (result.isConfirmed) {
+    try {
+      const body = { id: itemId, folder: currentFolder || '/', trashId, user: viewingUser };
+      if (type === 'folder') body.folderName = itemId;
+      const res = await fetch(API + `/${type === 'folder' ? 'folder' : 'files'}/undo`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify(body)
+      });
+      if (res.ok) {
+        loadTrash();
+        Swal.fire({
+          title: "Success",
+          text: `${originalName} restored successfully`,
+          icon: "success",
+          background: "#222",
+          color: "#eee",
+          confirmButtonColor: "#2ecc71"
+        });
+      } else {
+        Swal.fire({
+          title: "Error",
+          text: "Failed to restore from Trash",
+          icon: "error",
+          background: "#222",
+          color: "#eee",
+          confirmButtonColor: "#2ecc71"
+        });
+      }
+    } catch (err) {
+      Swal.fire({
+        title: "Error",
+        text: "Failed to restore from Trash",
+        icon: "error",
+        background: "#222",
+        color: "#eee",
+        confirmButtonColor: "#2ecc71"
+      });
+    }
+  }
+}
+
+// Delete permanently from Trash
+async function deleteFromTrash(itemName) {
+  const result = await Swal.fire({
+    title: "Delete Permanently?",
+    text: "This item will be deleted forever!",
+    icon: "warning",
+    showCancelButton: true,
+    confirmButtonColor: "#e74c3c",
+    cancelButtonColor: "#555",
+    confirmButtonText: "Delete Permanently",
+    cancelButtonText: "Cancel",
+    background: "#222",
+    color: "#eee",
+    showClass: { popup: 'swal2-show 0.5s' },
+    hideClass: { popup: 'swal2-hide 0.5s' }
+  });
+  if (result.isConfirmed) {
+    try {
+      const res = await fetch(API + `/trash/${encodeURIComponent(itemName)}${viewingUser ? '?user=' + encodeURIComponent(viewingUser) : ''}`, {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (res.ok) {
+        loadTrash();
+        Swal.fire({
+          title: "Success",
+          text: "Item permanently deleted",
+          icon: "success",
+          background: "#222",
+          color: "#eee",
+          confirmButtonColor: "#2ecc71"
+        });
+      } else {
+        Swal.fire({
+          title: "Error",
+          text: "Failed to delete from Trash",
+          icon: "error",
+          background: "#222",
+          color: "#eee",
+          confirmButtonColor: "#2ecc71"
+        });
+      }
+    } catch (err) {
+      Swal.fire({
+        title: "Error",
+        text: "Failed to delete from Trash",
+        icon: "error",
+        background: "#222",
+        color: "#eee",
+        confirmButtonColor: "#2ecc71"
+      });
+    }
+  }
+}
+
+// Delete folder
+async function deleteFolder(event, folderName) {
+  event.stopPropagation();
+  const result = await Swal.fire({
+    title: "Delete Folder?",
+    text: `The folder "${folderName}" will be moved to Trash!`,
+    icon: "warning",
+    showCancelButton: true,
+    confirmButtonColor: "#e74c3c",
+    cancelButtonColor: "#555",
+    confirmButtonText: "Move to Trash",
+    cancelButtonText: "Cancel",
+    background: "#222",
+    color: "#eee",
+    showClass: { popup: 'swal2-show 0.5s' },
+    hideClass: { popup: 'swal2-hide 0.5s' }
+  });
+  if (result.isConfirmed) {
+    try {
+      const res = await fetch(API + `/folder/${encodeURIComponent(folderName)}?currentFolder=${encodeURIComponent(currentFolder)}${viewingUser ? '&user=' + encodeURIComponent(viewingUser) : ''}`, {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      const data = await res.json();
+      if (res.ok) {
+        loadFiles();
+        const undoResult = await Swal.fire({
+          title: "Moved to Trash!",
+          text: `The folder "${folderName}" has been moved to Trash.`,
+          icon: "success",
+          background: "#222",
+          color: "#eee",
+          confirmButtonColor: "#2ecc71",
+          confirmButtonText: "OK",
+          showCancelButton: true,
+          cancelButtonText: "Undo",
+          cancelButtonColor: "#f39c12",
+          timer: 5000,
+          timerProgressBar: true,
+          showClass: { popup: 'swal2-show 0.5s' },
+          hideClass: { popup: 'swal2-hide 0.5s' }
+        });
+        if (undoResult.dismiss === Swal.DismissReason.cancel) {
+          const undoRes = await fetch(API + `/folder/undo`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+            body: JSON.stringify({ folderName, currentFolder: currentFolder || '/', trashId: data.trashId, user: viewingUser })
+          });
+          if (undoRes.ok) {
+            loadFiles();
+            Swal.fire({
+              title: "Success",
+              text: `Folder "${folderName}" restored`,
+              icon: "success",
+              background: "#222",
+              color: "#eee",
+              confirmButtonColor: "#2ecc71"
+            });
+          } else {
+            Swal.fire({
+              title: "Error",
+              text: "Failed to undo folder move",
+              icon: "error",
+              background: "#222",
+              color: "#eee",
+              confirmButtonColor: "#2ecc71"
+            });
+          }
+        }
+      } else {
+        Swal.fire({
+          title: "Error",
+          text: data.error || "Failed to move folder to Trash",
+          icon: "error",
+          background: "#222",
+          color: "#eee",
+          confirmButtonColor: "#2ecc71"
+        });
+      }
+    } catch (err) {
+      Swal.fire({
+        title: "Error",
+        text: "Failed to move folder to Trash",
+        icon: "error",
+        background: "#222",
+        color: "#eee",
+        confirmButtonColor: "#2ecc71"
+      });
+    }
+  }
+}
+
+// Delete file
+async function del(id) {
+  event.stopPropagation();
+  const result = await Swal.fire({
+    title: "Delete File?",
+    text: "The file will be moved to Trash!",
+    icon: "warning",
+    showCancelButton: true,
+    confirmButtonColor: "#e74c3c",
+    cancelButtonColor: "#555",
+    confirmButtonText: "Move to Trash",
+    cancelButtonText: "Cancel",
+    background: "#222",
+    color: "#eee",
+    showClass: { popup: 'swal2-show 0.5s' },
+    hideClass: { popup: 'swal2-hide 0.5s' }
+  });
+  if (result.isConfirmed) {
+    try {
+      const res = await fetch(API + `/files/${encodeURIComponent(id)}?folder=${encodeURIComponent(currentFolder)}${viewingUser ? '&user=' + encodeURIComponent(viewingUser) : ''}`, {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      const data = await res.json();
+      if (res.ok) {
+        loadFiles();
+        const undoResult = await Swal.fire({
+          title: "Moved to Trash!",
+          text: "The file has been moved to Trash.",
+          icon: "success",
+          background: "#222",
+          color: "#eee",
+          confirmButtonColor: "#2ecc71",
+          confirmButtonText: "OK",
+          showCancelButton: true,
+          cancelButtonText: "Undo",
+          cancelButtonColor: "#f39c12",
+          timer: 5000,
+          timerProgressBar: true,
+          showClass: { popup: 'swal2-show 0.5s' },
+          hideClass: { popup: 'swal2-hide 0.5s' }
+        });
+        if (undoResult.dismiss === Swal.DismissReason.cancel) {
+          const undoRes = await fetch(API + `/files/undo`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+            body: JSON.stringify({ id, folder: currentFolder || '/', trashId: data.trashId, user: viewingUser })
+          });
+          if (undoRes.ok) {
+            loadFiles();
+            Swal.fire({
+              title: "Success",
+              text: "File restored",
+              icon: "success",
+              background: "#222",
+              color: "#eee",
+              confirmButtonColor: "#2ecc71"
+            });
+          } else {
+            Swal.fire({
+              title: "Error",
+              text: "Failed to undo file move",
+              icon: "error",
+              background: "#222",
+              color: "#eee",
+              confirmButtonColor: "#2ecc71"
+            });
+          }
+        }
+      } else {
+        Swal.fire({
+          title: "Error",
+          text: data.error || "Failed to move file to Trash",
+          icon: "error",
+          background: "#222",
+          color: "#eee",
+          confirmButtonColor: "#2ecc71"
+        });
+      }
+    } catch (err) {
+      Swal.fire({
+        title: "Error",
+        text: "Failed to move file to Trash",
+        icon: "error",
+        background: "#222",
+        color: "#eee",
+        confirmButtonColor: "#2ecc71"
+      });
+    }
+  }
+}
+
+function goBack() {
+  const parts = currentFolder.split("/").filter(Boolean);
+  parts.pop();
+  currentFolder = "/" + (parts.length ? parts.join("/") + "/" : "");
+  document.getElementById("searchInput").value = "";
+  loadFiles();
+}
+
+function getParentFolder() {
+  const parts = currentFolder.split("/").filter(Boolean);
+  parts.pop();
+  return "/" + (parts.length ? parts.join("/") + "/" : "");
+}
+
+async function download(id, name) {
+  event.stopPropagation();
+  try {
+    const res = await fetch(API + `/files/download/${encodeURIComponent(id)}?folder=${encodeURIComponent(currentFolder)}${viewingUser ? '&user=' + encodeURIComponent(viewingUser) : ''}`, {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+    if (!res.ok) return Swal.fire({
+      title: "Error",
+      text: "Failed to download file",
+      icon: "error",
+      background: "#222",
+      color: "#eee",
+      confirmButtonColor: "#2ecc71"
+    });
+    const blob = await res.blob();
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = name;
+    a.click();
+    a.remove();
+    window.URL.revokeObjectURL(url);
+  } catch (err) {
+    Swal.fire({
+      title: "Error",
+      text: "Failed to download file",
+      icon: "error",
+      background: "#222",
+      color: "#eee",
+      confirmButtonColor: "#2ecc71"
+    });
+  }
+}
+
+function pathJoin(folder, sub) {
+  if (folder.endsWith("/")) folder = folder.slice(0, -1);
+  return folder + "/" + sub + "/";
+}
+
+// Logout
+function logout() {
+  token = null;
+  document.getElementById("dash").style.display = "none";
+  document.getElementById("auth").style.display = "block";
+  document.getElementById("secretWordDiv").style.display = "none";
+  viewingUser = null;
+  currentFolder = "/";
+  document.getElementById("searchInput").value = "";
+}
+
+// --- Admin panel ---
+async function loadAdminPanel() {
+  try {
+    const res = await fetch(API + "/admin/users", {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+    if (!res.ok) return Swal.fire({
+      title: "Error",
+      text: "Failed to load users",
+      icon: "error",
+      background: "#222",
+      color: "#eee",
+      confirmButtonColor: "#2ecc71"
+    });
+    const data = await res.json();
+    const ul = document.getElementById("userList");
+    ul.innerHTML = "";
+    data.users.forEach(u => {
+      const div = document.createElement("div");
+      div.className = "file";
+      div.innerHTML = `<span class="name">${u.username} ${u.isAdmin ? "(Admin)" : ""}</span>
+        <span class="actions">
+          <button class="small delete" title="Delete user" onclick="delUser('${u.username}')"><i class="fas fa-trash"></i></button>
+          <button class="small view" title="View user files" onclick="viewUserFiles('${u.username}')"><i class="fas fa-eye"></i></button>
+        </span>`;
+      ul.appendChild(div);
+    });
+    document.getElementById("adminPanel").style.display = "block";
+  } catch (err) {
+    Swal.fire({
+      title: "Error",
+      text: "Failed to load admin panel",
+      icon: "error",
+      background: "#222",
+      color: "#eee",
+      confirmButtonColor: "#2ecc71"
+    });
+  }
+}
+
+async function delUser(username) {
+  const result = await Swal.fire({
+    title: "Delete User?",
+    text: `The user "${username}" will be moved to Trash!`,
+    icon: "warning",
+    showCancelButton: true,
+    confirmButtonColor: "#e74c3c",
+    cancelButtonColor: "#555",
+    confirmButtonText: "Move to Trash",
+    cancelButtonText: "Cancel",
+    background: "#222",
+    color: "#eee",
+    showClass: { popup: 'swal2-show 0.5s' },
+    hideClass: { popup: 'swal2-hide 0.5s' }
+  });
+  if (result.isConfirmed) {
+    try {
+      const res = await fetch(API + "/admin/user/" + encodeURIComponent(username), {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      const data = await res.json();
+      if (res.ok) {
+        loadAdminPanel();
+        const undoResult = await Swal.fire({
+          title: "Moved to Trash!",
+          text: `The user "${username}" has been moved to Trash.`,
+          icon: "success",
+          background: "#222",
+          color: "#eee",
+          confirmButtonColor: "#2ecc71",
+          confirmButtonText: "OK",
+          showCancelButton: true,
+          cancelButtonText: "Undo",
+          cancelButtonColor: "#f39c12",
+          timer: 5000,
+          timerProgressBar: true,
+          showClass: { popup: 'swal2-show 0.5s' },
+          hideClass: { popup: 'swal2-hide 0.5s' }
+        });
+        if (undoResult.dismiss === Swal.DismissReason.cancel) {
+          const undoRes = await fetch(API + "/admin/user/undo", {
+            method: "POST",
+            headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+            body: JSON.stringify({ username })
+          });
+          if (undoRes.ok) {
+            loadAdminPanel();
+            Swal.fire({
+              title: "Success",
+              text: `User "${username}" restored`,
+              icon: "success",
+              background: "#222",
+              color: "#eee",
+              confirmButtonColor: "#2ecc71"
+            });
+          } else {
+            Swal.fire({
+              title: "Error",
+              text: "Failed to undo user move",
+              icon: "error",
+              background: "#222",
+              color: "#eee",
+              confirmButtonColor: "#2ecc71"
+            });
+          }
+        }
+      } else {
+        Swal.fire({
+          title: "Error",
+          text: data.error || "Failed to move user to Trash",
+          icon: "error",
+          background: "#222",
+          color: "#eee",
+          confirmButtonColor: "#2ecc71"
+        });
+      }
+    } catch (err) {
+      Swal.fire({
+        title: "Error",
+        text: "Failed to move user to Trash",
+        icon: "error",
+        background: "#222",
+        color: "#eee",
+        confirmButtonColor: "#2ecc71"
+      });
+    }
+  }
+}
+
+async function viewUserFiles(username) {
+  viewingUser = username;
+  currentFolder = "/";
+  document.getElementById("searchInput").value = "";
+  loadFiles();
+}
+
+// Drag and Drop Handlers for file upload
+const dropZone = document.getElementById("dropZone");
+dropZone.addEventListener("dragover", (e) => {
+  e.preventDefault();
+  dropZone.classList.add("dragover");
+});
+dropZone.addEventListener("dragenter", (e) => {
+  e.preventDefault();
+  dropZone.classList.add("dragover");
+});
+dropZone.addEventListener("dragleave", () => {
+  dropZone.classList.remove("dragover");
+});
+dropZone.addEventListener("drop", (e) => {
+  e.preventDefault();
+  dropZone.classList.remove("dragover");
+  const files = Array.from(e.dataTransfer.files);
+  files.forEach(uploadFile);
+});
+
+// Check initial login
+if (token) {
+  document.getElementById("auth").style.display = "none";
+  document.getElementById("dash").style.display = "block";
+  loadFiles();
+}
+</script>
+
+</body>
+</html>
